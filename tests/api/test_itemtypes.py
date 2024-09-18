@@ -62,6 +62,11 @@ def test_get_collection_queryables(config, api_):
         api_, req, 'notfound')
     assert code == HTTPStatus.NOT_FOUND
 
+    req = mock_api_request()
+    rsp_headers, code, response = get_collection_queryables(
+        api_, req, 'mapserver_world_map')
+    assert code == HTTPStatus.BAD_REQUEST
+
     req = mock_api_request({'f': 'html'})
     rsp_headers, code, response = get_collection_queryables(api_, req, 'obs')
     assert rsp_headers['Content-Type'] == FORMAT_TYPES[F_HTML]
@@ -572,6 +577,13 @@ def test_get_collection_item(config, api_):
     assert feature['properties']['stn_id'] == 35
     assert 'prev' not in feature['links']
     assert 'next' not in feature['links']
+
+    req = mock_api_request()
+    rsp_headers, code, response = get_collection_item(api_, req, 'norway_pop',
+                                                      '790')
+    feature = json.loads(response)
+
+    assert feature['properties']['name'] == 'Ålesund'
 
 
 def test_get_collection_item_json_ld(config, api_):

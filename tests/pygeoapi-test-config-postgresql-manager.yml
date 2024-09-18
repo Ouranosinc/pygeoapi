@@ -1,8 +1,8 @@
 # =================================================================
 #
-# Authors: Tom Kralidis <tomkralidis@gmail.com>
+# Authors: Francesco Martinelli <francesco.martinelli@ingv.it>
 #
-# Copyright (c) 2019 Tom Kralidis
+# Copyright (c) 2024 Francesco Martinelli
 #
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation
@@ -47,8 +47,15 @@ server:
         url: https://tile.openstreetmap.org/{z}/{x}/{y}.png
         attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
     manager:
-        name: TinyDB
-        connection: /tmp/pygeoapi-test-process-manager.db
+        name: PostgreSQL
+        connection:
+          host: localhost
+          port: 5432
+          database: test
+          user: postgres
+          password: ${POSTGRESQL_PASSWORD:-postgres}
+        # Alternative accepted connection definition:
+        # connection: postgresql://postgres:${POSTGRESQL_PASSWORD:-postgres}@localhost:5432/test
         output_dir: /tmp
 
 logging:
@@ -58,8 +65,8 @@ logging:
 metadata:
     identification:
         title:
-            en: pygeoapi default instance
-            fr: instance par défaut de pygeoapi
+            en: pygeoapi instance to test Process Manager backed by PostgreSql
+            fr: test instance de pygeoapi
         description:
             en: pygeoapi provides an API to geospatial data
             fr: pygeoapi fournit une API aux données géospatiales
@@ -98,85 +105,9 @@ metadata:
         role: pointOfContact
 
 resources:
-    obs:
-        type: collection
-        visibility: hidden
-        title:
-            en: Observations
-            fr: Observations
-        description:
-            en: My cool observations
-            fr: Mes belles observations
-        keywords:
-            - observations
-            - monitoring
-        links:
-            - type: text/csv
-              rel: canonical
-              title: data
-              href: https://github.com/mapserver/mapserver/blob/branch-7-0/msautotest/wxs/data/obs.csv
-              hreflang: en-US
-            - type: text/csv
-              rel: alternate
-              title: data
-              href: https://raw.githubusercontent.com/mapserver/mapserver/branch-7-0/msautotest/wxs/data/obs.csv
-              hreflang: en-US
-        linked-data:
-            context:
-                - schema: https://schema.org/
-                  stn_id:
-                      "@id": schema:identifier
-                      "@type": schema:Text
-                  datetime:
-                      "@type": schema:DateTime
-                      "@id": schema:observationDate
-                  value:
-                      "@type": schema:Number
-                      "@id": schema:QuantitativeValue
-        extents:
-            spatial:
-                bbox: [-180,-90,180,90]
-                crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
-            temporal:
-                begin: 2000-10-30T18:24:39Z
-                end: 2007-10-30T08:57:29Z
-                trs: http://www.opengis.net/def/uom/ISO-8601/0/Gregorian
-        providers:
-            - type: feature
-              name: CSV
-              data: tests/data/obs.csv
-              id_field: id
-              geometry:
-                  x_field: long
-                  y_field: lat
-
-    objects:
-        type: collection
-        title: GeoJSON objects
-        description: GeoJSON geometry types for GeoSparql and Schema Geometry conversion.
-        keywords:
-            - shapes
-        links:
-            - type: text/html
-              rel: canonical
-              title: data source
-              href: https://en.wikipedia.org/wiki/GeoJSON
-              hreflang: en-US
-        extents:
-            spatial:
-                bbox: [-180,-90,180,90]
-                crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
-            temporal:
-                begin: null
-                end: null  # or empty (either means open ended)
-        providers:
-            - type: feature
-              name: GeoJSON
-              data: tests/data/items.geojson
-              id_field: fid
-              uri_field: uri
 
     hello-world:
         type: process
         processor:
             name: HelloWorld
+
