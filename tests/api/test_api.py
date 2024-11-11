@@ -271,8 +271,9 @@ def test_apirules_active(config_with_rules, rules_api):
         assert response.status_code == 200
         assert response.is_json
         links = response.json['links']
+        assert links[0]['rel'] == 'about'
         assert all(
-            href.startswith(base_url) for href in (rel['href'] for rel in links)  # noqa
+            href.startswith(base_url) for href in (rel['href'] for rel in links[1:])  # noqa
         )
 
     # Test Starlette
@@ -303,8 +304,9 @@ def test_apirules_active(config_with_rules, rules_api):
         response = starlette_client.get(starlette_prefix, follow_redirects=True)  # noqa
         assert response.status_code == 200
         links = response.json()['links']
+        assert links[0]['rel'] == 'about'
         assert all(
-            href.startswith(base_url) for href in (rel['href'] for rel in links)  # noqa
+            href.startswith(base_url) for href in (rel['href'] for rel in links[1:])  # noqa
         )
 
 
@@ -386,6 +388,9 @@ def test_api(config, api_, openapi):
     rsp_headers, code, response = api_.openapi_(req)
     assert rsp_headers['Content-Language'] == 'en-US'
     assert code == HTTPStatus.BAD_REQUEST
+
+    response = json.loads(response)
+    assert response['description'] == 'Invalid format requested'
 
     assert api_.get_collections_url() == 'http://localhost:5000/collections'
 
@@ -510,14 +515,17 @@ def test_root(config, api_):
 
     assert isinstance(root, dict)
     assert 'links' in root
-    assert root['links'][0]['rel'] == 'self'
-    assert root['links'][0]['type'] == FORMAT_TYPES[F_JSON]
-    assert root['links'][0]['href'].endswith('?f=json')
+    assert root['links'][0]['rel'] == 'about'
+    assert root['links'][0]['type'] == 'text/html'
+    assert root['links'][0]['href'] == 'http://example.org'
+    assert root['links'][1]['rel'] == 'self'
+    assert root['links'][1]['type'] == FORMAT_TYPES[F_JSON]
+    assert root['links'][1]['href'].endswith('?f=json')
     assert any(link['href'].endswith('f=jsonld') and link['rel'] == 'alternate'
                for link in root['links'])
     assert any(link['href'].endswith('f=html') and link['rel'] == 'alternate'
                for link in root['links'])
-    assert len(root['links']) == 11
+    assert len(root['links']) == 12
     assert 'title' in root
     assert root['title'] == 'pygeoapi default instance'
     assert 'description' in root
@@ -567,7 +575,7 @@ def test_conformance(config, api_):
 
     assert isinstance(root, dict)
     assert 'conformsTo' in root
-    assert len(root['conformsTo']) == 37
+    assert len(root['conformsTo']) == 42
     assert 'http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs' \
            in root['conformsTo']
 
@@ -596,7 +604,7 @@ def test_describe_collections(config, api_):
     collections = json.loads(response)
 
     assert len(collections) == 2
-    assert len(collections['collections']) == 9
+    assert len(collections['collections']) == 10
     assert len(collections['links']) == 3
 
     rsp_headers, code, response = api_.describe_collections(req, 'foo')

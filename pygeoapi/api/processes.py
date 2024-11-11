@@ -46,6 +46,7 @@ from http import HTTPStatus
 import json
 import logging
 from typing import Tuple
+import urllib.parse
 
 from pygeoapi import l10n
 from pygeoapi.util import (
@@ -162,7 +163,7 @@ def describe_processes(api: API, request: APIRequest,
                 'type': FORMAT_TYPES[F_HTML],
                 'rel': 'http://www.opengis.net/def/rel/ogc/1.0/job-list',
                 'href': f'{jobs_url}?f={F_HTML}',
-                'title': l10n.translate('Jobs for this process as HTML', request.locale),  # noqa
+                'title': l10n.translate('Jobs list as HTML', request.locale),  # noqa
                 'hreflang': api.default_locale
             }
             p2['links'].append(link)
@@ -171,7 +172,7 @@ def describe_processes(api: API, request: APIRequest,
                 'type': FORMAT_TYPES[F_JSON],
                 'rel': 'http://www.opengis.net/def/rel/ogc/1.0/job-list',
                 'href': f'{jobs_url}?f={F_JSON}',
-                'title': l10n.translate('Jobs for this process as HTML', request.locale),  # noqa
+                'title': l10n.translate('Jobs list as JSON', request.locale),  # noqa
                 'hreflang': api.default_locale
             }
             p2['links'].append(link)
@@ -240,10 +241,51 @@ def get_jobs(api: API, request: APIRequest,
 
     headers = request.get_response_headers(SYSTEM_LOCALE,
                                            **api.api_headers)
+    LOGGER.debug('Processing limit parameter')
+    try:
+        limit = int(request.params.get('limit'))
+
+        if limit <= 0:
+            msg = 'limit value should be strictly positive'
+            return api.get_exception(
+                HTTPStatus.BAD_REQUEST, headers, request.format,
+                'InvalidParameterValue', msg)
+    except TypeError:
+        limit = int(api.config['server']['limit'])
+        LOGGER.debug('returning all jobs')
+    except ValueError:
+        msg = 'limit value should be an integer'
+        return api.get_exception(
+            HTTPStatus.BAD_REQUEST, headers, request.format,
+            'InvalidParameterValue', msg)
+
+    LOGGER.debug('Processing offset parameter')
+    try:
+        offset = int(request.params.get('offset'))
+        if offset < 0:
+            msg = 'offset value should be positive or zero'
+            return api.get_exception(
+                HTTPStatus.BAD_REQUEST, headers, request.format,
+                'InvalidParameterValue', msg)
+    except TypeError as err:
+        LOGGER.warning(err)
+        offset = 0
+    except ValueError:
+        msg = 'offset value should be an integer'
+        return api.get_exception(
+            HTTPStatus.BAD_REQUEST, headers, request.format,
+            'InvalidParameterValue', msg)
+
     if job_id is None:
-        jobs = sorted(api.manager.get_jobs(),
+        jobs_data = api.manager.get_jobs(limit=limit, offset=offset)
+        # TODO: For pagination to work, the provider has to do the sorting.
+        #       Here we do sort again in case the provider doesn't support
+        #       pagination yet and always returns all jobs.
+        jobs = sorted(jobs_data['jobs'],
                       key=lambda k: k['job_start_datetime'],
                       reverse=True)
+        numberMatched = jobs_data['numberMatched']
+
     else:
         try:
             jobs = [api.manager.get_job(job_id)]
@@ -251,6 +293,7 @@ def get_jobs(api: API, request: APIRequest,
             return api.get_exception(
                 HTTPStatus.NOT_FOUND, headers, request.format,
                 'InvalidParameterValue', job_id)
+        numberMatched = 1
 
     serialized_jobs = {
         'jobs': [],
@@ -309,6 +352,44 @@ def get_jobs(api: API, request: APIRequest,
 
         serialized_jobs['jobs'].append(job2)
 
+    serialized_query_params = ''
+    for k, v in request.params.items():
+        if k not in ('f', 'offset'):
+            serialized_query_params += '&'
+            serialized_query_params += urllib.parse.quote(k, safe='')
+            serialized_query_params += '='
+            serialized_query_params += urllib.parse.quote(str(v), safe=',')
+
+    uri = f'{api.base_url}/jobs'
+
+    if offset > 0:
+        prev = max(0, offset - limit)
+        serialized_jobs['links'].append(
+            {
+                'href': f'{uri}?offset={prev}{serialized_query_params}',
+                'type': FORMAT_TYPES[F_JSON],
+                'rel': 'prev',
+                'title': l10n.translate('Items (prev)', request.locale),
+            })
+
+    next_link = False
+
+    if numberMatched > (limit + offset):
+        next_link = True
+    elif len(jobs) == limit:
+        next_link = True
+
+    if next_link:
+        next_ = offset + limit
+        next_href = f'{uri}?offset={next_}{serialized_query_params}'
+        serialized_jobs['links'].append(
+            {
+                'href': next_href,
+                'rel': 'next',
+                'type': FORMAT_TYPES[F_JSON],
+                'title': l10n.translate('Items (next)', request.locale),
+            })
+
     if job_id is None:
         j2_template = 'jobs/index.html'
     else:
@@ -318,6 +399,7 @@ def get_jobs(api: API, request: APIRequest,
     if request.format == F_HTML:
         data = {
             'jobs': serialized_jobs,
+            'offset': offset,
             'now': datetime.now(timezone.utc).strftime(DATETIME_FORMAT)
         }
         response = render_j2_template(api.tpl_config, j2_template, data,
@@ -379,6 +461,8 @@ def execute_process(api: API, request: APIRequest,
     requested_outputs = data.get('outputs')
     LOGGER.debug(f'outputs: {requested_outputs}')
 
+    requested_response = data.get('response', 'raw')
+
     subscriber = None
     subscriber_dict = data.get('subscriber')
     if subscriber_dict:
@@ -407,10 +491,14 @@ def execute_process(api: API, request: APIRequest,
         result = api.manager.execute_process(
             process_id, data_dict, execution_mode=execution_mode,
             requested_outputs=requested_outputs,
-            subscriber=subscriber)
+            subscriber=subscriber,
+            requested_response=requested_response)
         job_id, mime_type, outputs, status, additional_headers = result
         headers.update(additional_headers or {})
-        headers['Location'] = f'{api.base_url}/jobs/{job_id}'
+
+        if api.manager.is_async:
+            headers['Location'] = f'{api.base_url}/jobs/{job_id}'
+
     except ProcessorExecuteError as err:
         return api.get_exception(
             err.http_status_code, headers,
@@ -420,11 +508,11 @@ def execute_process(api: API, request: APIRequest,
     if status == JobStatus.failed:
         response = outputs
 
-    if data.get('response', 'raw') == 'raw':
+    if requested_response == 'raw':
         headers['Content-Type'] = mime_type
         response = outputs
     elif status not in (JobStatus.failed, JobStatus.accepted):
-        response['outputs'] = [outputs]
+        response = outputs
 
     if status == JobStatus.accepted:
         http_status = HTTPStatus.CREATED
@@ -433,7 +521,7 @@ def execute_process(api: API, request: APIRequest,
     else:
         http_status = HTTPStatus.OK
 
-    if mime_type == 'application/json':
+    if mime_type == 'application/json' or requested_response == 'document':
         response2 = to_json(response, api.pretty_print)
     else:
         response2 = response
@@ -512,9 +600,7 @@ def get_job_result(api: API, request: APIRequest,
     return headers, HTTPStatus.OK, content
 
 
-def delete_job(
-    api: API, request: APIRequest, job_id
-) -> Tuple[dict, int, str]:
+def delete_job(api: API, request: APIRequest, job_id) -> Tuple[dict, int, str]:
     """
     Delete a process job
 
@@ -522,6 +608,7 @@ def delete_job(
 
     :returns: tuple of headers, status code, content
     """
+
     response_headers = request.get_response_headers(
         SYSTEM_LOCALE, **api.api_headers)
     try:
@@ -555,7 +642,7 @@ def delete_job(
             )
     LOGGER.info(response)
     # TODO: this response does not have any headers
-    return {}, http_status, response
+    return {}, http_status, to_json(response, api.pretty_print)
 
 
 def get_oas_30(cfg: dict, locale: str) -> tuple[list[dict[str, str]], dict[str, dict]]:  # noqa

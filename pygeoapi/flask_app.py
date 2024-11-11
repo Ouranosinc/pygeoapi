@@ -77,7 +77,7 @@ ADMIN_BLUEPRINT = Blueprint('admin', __name__, static_folder=STATIC_FOLDER)
 if CONFIG['server'].get('cors', False):
     try:
         from flask_cors import CORS
-        CORS(APP)
+        CORS(APP, CORS_EXPOSE_HEADERS=['*'])
     except ModuleNotFoundError:
         print('Python package flask-cors required for CORS support')
 
@@ -279,11 +279,7 @@ def collection_items(collection_id, item_id=None):
     """
 
     if item_id is None:
-        if request.method == 'GET':  # list items
-            return execute_from_flask(itemtypes_api.get_collection_items,
-                                      request, collection_id,
-                                      skip_valid_check=True)
-        elif request.method == 'POST':  # filter or manage items
+        if request.method == 'POST':  # filter or manage items
             if request.content_type is not None:
                 if request.content_type == 'application/geo+json':
                     return execute_from_flask(
@@ -298,6 +294,10 @@ def collection_items(collection_id, item_id=None):
             return execute_from_flask(
                     itemtypes_api.manage_collection_item, request, 'options',
                     collection_id, skip_valid_check=True)
+        else:  # GET: list items
+            return execute_from_flask(itemtypes_api.get_collection_items,
+                                      request, collection_id,
+                                      skip_valid_check=True)
 
     elif request.method == 'DELETE':
         return execute_from_flask(itemtypes_api.manage_collection_item,

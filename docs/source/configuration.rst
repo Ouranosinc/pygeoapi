@@ -57,8 +57,8 @@ For more information related to API design rules (the ``api_rules`` property in 
       static: /path/to/static/folder # path to static folder containing css, js, images and other static files referenced by the template
 
     map:  # leaflet map setup for HTML pages
-        url: https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png
-        attribution: '<a href="https://wikimediafoundation.org/wiki/Maps_Terms_of_Use">Wikimedia maps</a> | Map data &copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+        url: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
     ogc_schemas_location: /opt/schemas.opengis.net  # local copy of https://schemas.opengis.net
 
     manager:  # optional OGC API - Processes asynchronous job management
@@ -206,6 +206,7 @@ default.
               temporal:  # optional
                   begin: 2000-10-30T18:24:39Z  # start datetime in RFC3339
                   end: 2007-10-30T08:57:29Z  # end datetime in RFC3339
+                  trs: http://www.opengis.net/def/uom/ISO-8601/0/Gregorian  # TRS
           providers:  # list of 1..n required connections information
               # provider name
               # see pygeoapi.plugin for supported providers
@@ -240,7 +241,7 @@ default.
                     option_name: option_value
 
       hello-world:  # name of process
-          type: collection  # REQUIRED (collection, process, or stac-collection)
+          type: process  # REQUIRED (collection, process, or stac-collection)
           processor:
               name: HelloWorld  # Python path of process definition
 

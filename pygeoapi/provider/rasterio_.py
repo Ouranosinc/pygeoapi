@@ -59,38 +59,39 @@ class RasterioProvider(BaseProvider):
             self.axes = self._coverage_properties['axes']
             self.crs = self._coverage_properties['bbox_crs']
             self.num_bands = self._coverage_properties['num_bands']
-            self.fields = self.get_fields()
+            self.get_fields()
             self.native_format = provider_def['format']['name']
         except Exception as err:
             LOGGER.warning(err)
             raise ProviderConnectionError(err)
 
     def get_fields(self):
-        fields = {}
+        if not self._fields:
+            for i, dtype in zip(self._data.indexes, self._data.dtypes):
+                LOGGER.debug(f'Adding field for band {i}')
+                i2 = str(i)
 
-        for i, dtype in zip(self._data.indexes, self._data.dtypes):
-            LOGGER.debug(f'Adding field for band {i}')
-            i2 = str(i)
+                parameter = _get_parameter_metadata(
+                    self._data.profile['driver'], self._data.tags(i))
 
-            parameter = _get_parameter_metadata(
-                self._data.profile['driver'], self._data.tags(i))
+                name = parameter['description']
+                units = parameter.get('unit_label')
 
-            name = parameter['description']
-            units = parameter.get('unit_label')
+                dtype2 = dtype
+                if dtype.startswith('float'):
+                    dtype2 = 'number'
+                elif dtype.startswith('int'):
+                    dtype2 = 'integer'
 
-            dtype2 = dtype
-            if dtype.startswith('float'):
-                dtype2 = 'number'
+                self._fields[i2] = {
+                    'title': name,
+                    'type': dtype2,
+                    '_meta': self._data.tags(i)
+                }
+                if units is not None:
+                    self._fields[i2]['x-ogc-unit'] = units
 
-            fields[i2] = {
-                'title': name,
-                'type': dtype2,
-                '_meta': self._data.tags(i)
-            }
-            if units is not None:
-                fields[i2]['x-ogc-unit'] = units
-
-        return fields
+        return self._fields
 
     def query(self, properties=[], subsets={}, bbox=None, bbox_crs=4326,
               datetime_=None, format_='json', **kwargs):
@@ -241,16 +242,15 @@ class RasterioProvider(BaseProvider):
             out_meta['units'] = _data.units
 
             LOGGER.debug('Serializing data in memory')
-            with MemoryFile() as memfile:
-                with memfile.open(**out_meta) as dest:
-                    dest.write(out_image)
+            if format_ == 'json':
+                LOGGER.debug('Creating output in CoverageJSON')
+                out_meta['bands'] = args['indexes']
+                return self.gen_covjson(out_meta, out_image)
 
-                if format_ == 'json':
-                    LOGGER.debug('Creating output in CoverageJSON')
-                    out_meta['bands'] = args['indexes']
-                    return self.gen_covjson(out_meta, out_image)
-
-                else:  # return data in native format
+            else:  # return data in native format
+                with MemoryFile() as memfile:
+                    with memfile.open(**out_meta) as dest:
+                        dest.write(out_image)
                     LOGGER.debug('Returning data in native format')
                     return memfile.read()
 

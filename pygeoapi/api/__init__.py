@@ -80,6 +80,7 @@ HEADERS = {
 
 CHARSET = ['utf-8']
 F_JSON = 'json'
+F_COVERAGEJSON = 'json'
 F_HTML = 'html'
 F_JSONLD = 'jsonld'
 F_GZIP = 'gzip'
@@ -714,6 +715,13 @@ class API:
         LOGGER.debug('Creating links')
         # TODO: put title text in config or translatable files?
         fcm['links'] = [{
+            'rel': 'about',
+            'type': 'text/html',
+            'title': l10n.translate(
+                self.config['metadata']['identification']['title'],
+                request.locale),
+            'href': self.config['metadata']['identification']['url']
+        }, {
             'rel': request.get_linkrel(F_JSON),
             'type': FORMAT_TYPES[F_JSON],
             'title': l10n.translate('This document as JSON', request.locale),
@@ -1202,6 +1210,7 @@ class API:
             if edr:
                 # TODO: translate
                 LOGGER.debug('Adding EDR links')
+                collection['data_queries'] = {}
                 parameters = p.get_fields()
                 if parameters:
                     collection['parameter_names'] = {}
@@ -1222,6 +1231,14 @@ class API:
                         }
 
                 for qt in p.get_query_types():
+                    data_query = {
+                        'link': {
+                            'href': f'{self.get_collections_url()}/{k}/{qt}',
+                            'rel': 'data'
+                         }
+                    }
+                    collection['data_queries'][qt] = data_query
+
                     title1 = l10n.translate('query for this collection as JSON', request.locale)  # noqa
                     title1 = f'{qt} {title1}'
                     title2 = l10n.translate('query for this collection as HTML', request.locale)  # noqa
@@ -1366,6 +1383,7 @@ class API:
                 self.config['resources'][dataset]['title'], request.locale)
 
             schema['collections_path'] = self.get_collections_url()
+            schema['dataset_path'] = f'{self.get_collections_url()}/{dataset}'
 
             content = render_j2_template(self.tpl_config,
                                          'collections/schema.html',
@@ -1423,7 +1441,8 @@ class API:
         # Content-Language is in the system locale (ignore language settings)
         headers = request.get_response_headers(SYSTEM_LOCALE,
                                                **self.api_headers)
-        msg = f'Invalid format: {request.format}'
+        msg = 'Invalid format requested'
+        LOGGER.error(f'{msg}: {request.format}')
         return self.get_exception(
             HTTPStatus.BAD_REQUEST, headers,
             request.format, 'InvalidParameterValue', msg)
